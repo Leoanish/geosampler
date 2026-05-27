@@ -1,24 +1,49 @@
 # R project files
 .Rhistory
+.Rapp.history
 .RData
+.RDataTmp
+.Ruserdata
 .Rproj.user/
 *.Rproj
 
-# Shiny / rsconnect deployment credentials (keep dcf out of public repo)
+# Shiny / rsconnect deployment credentials
 rsconnect/
 
 # Environment / secrets
 .Renviron
-.env
+.httr-oauth
+
+# R CMD build / check
+*-Ex.R
+/*.tar.gz
+/*.Rcheck/
+
+# knitr / R Markdown cache and temp files
+*_cache/
+/cache/
+*.utf8.md
+*.knit.md
+*_files/
+user_guide_cache/
+
+# Vignettes output
+vignettes/*.html
+vignettes/*.pdf
+
+# pkgdown
+docs/
+
+# Translation temp files
+po/*~
 
 # OS artefacts
 .DS_Store
 Thumbs.db
 
-# Temporary / cache files
+# Temporary / log files
 *.tmp
 *.log
-*.cache
 
 # Large raster / spatial data (commit code, not data)
 *.tif
@@ -28,10 +53,8 @@ Thumbs.db
 *.hdf
 *.h5
 
-# Compiled Quarto output (regenerate locally)
-*_files/
+# Compiled HTML output
 *.html
-user_guide_cache/
 
 # Word / Excel scratch files
 ~$*.docx
