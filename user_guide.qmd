@@ -1,0 +1,469 @@
+---
+title: "GeoSampler — Step-by-Step User Guide"
+subtitle: "A complete walkthrough of the Sentinel-2 Shiny Sampling Dashboard"
+author: "Anish Bhattarai"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    toc-title: "Contents"
+    number-sections: true
+    theme: cosmo
+    code-fold: true
+    smooth-scroll: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+# Introduction
+
+GeoSampler is an R Shiny dashboard that guides you from **area definition → satellite imagery → statistically defensible GPS sample points** — all in your browser. This guide walks through every tab and control in the recommended order.
+
+**Live URL:** <https://recuga.shinyapps.io/sentinel2_trial/>
+
+**Recommended reading time:** 20–30 minutes for a first run; use the table of contents to jump to any tab.
+
+---
+
+# Before You Start
+
+## What you need
+
+| Item | Details |
+|---|---|
+| A web browser | Chrome or Firefox recommended |
+| Your area boundary | GeoJSON, KML, KMZ, zipped Shapefile, or GeoPackage — or just draw on the map |
+| Optional: imagery | If you have your own multispectral raster stack you can upload it instead of retrieving from Sentinel-2 |
+| Optional: historical points | GeoJSON/vector file of prior field sample locations for comparison |
+
+## Workflow overview
+
+The dashboard follows a **left-to-right linear flow**. The Welcome tab displays a clickable workflow tree that mirrors this order:
+
+```
+Boundary → Variables & derivatives → Sampling → App vs prior → Cost → Report
+```
+
+You do not have to use every tab — at minimum you need **Boundary** and **Sampling → Generate sample points** for a working output.
+
+---
+
+# Tab 1 — Dashboard (Welcome)
+
+When you open the app the **Dashboard** tab is shown first. It contains:
+
+- A **workflow tree** — click any step to jump directly to that tab.
+- A **Quick Start** card summarising the six-step flow.
+- A **Sampling Methods** card explaining when to use each technique.
+- A **Detailed Operating Guide** card with tips on AOI size, cloud constraints, layer QA, and output review.
+
+::: {.callout-tip}
+Hover over any tab title in the navigation bar for a one-line description of its purpose.
+:::
+
+**Nothing to fill in here — read the overview, then click the first workflow step or navigate to the Boundary tab.**
+
+---
+
+# Tab 2 — Boundary
+
+## Purpose
+
+Define one **Area of Interest (AOI)** polygon. Every subsequent tab — imagery retrieval, elevation, sampling, report — uses this boundary. Only one AOI is active at a time.
+
+## Step-by-step
+
+### Choose a boundary method
+
+In the left sidebar, use the **Select Boundary Method** dropdown:
+
+- **"I want to digitize"** — draw the boundary directly on the map.
+- **"I have my own boundary layer"** — upload an existing vector file.
+
+### Option A — Digitize on the map
+
+1. Select **"I want to digitize"**.
+2. Set your location one of two ways:
+   - Click **Use My Location** (browser geolocation) — the map re-centres on your GPS position.
+   - Or type a **Latitude** and **Longitude** and click **Set Location**.
+3. On the map panel, use the drawing toolbar (top-left of the map):
+   - Click the **polygon** or **rectangle** tool.
+   - Click on the map to add vertices. Double-click to close the polygon.
+   - Click **✓ Finish** in the toolbar, then **Done** to save the edits.
+4. The boundary appears as a coloured overlay on the map.
+
+::: {.callout-note}
+**Editing tip:** If you need to adjust the shape, use the **Edit** tool in the drawing toolbar. After editing, click **Save** (not Done) in the toolbar before clicking the app's **Done** button.
+:::
+
+### Option B — Upload a file
+
+1. Select **"I have my own boundary layer"**.
+2. Click the file picker and select your boundary file.
+   - Accepted: `.geojson`, `.json`, `.kml`, `.kmz`, `.zip` (zipped shapefile bundle), `.gpkg`.
+   - **GeoJSON is preferred** — it is a single self-contained file.
+   - For shapefiles, select all sidecar files (`.shp`, `.dbf`, `.shx`, `.prj`) together in one upload.
+3. The boundary loads onto the map automatically.
+4. Use the **X** button next to the uploader to clear and re-upload if needed.
+
+### Review and export
+
+- An **area summary** (hectares / km²) appears below the map once a valid boundary is loaded.
+- Click **Download GeoJSON of Boundary** in the sidebar to save the AOI for reproducibility.
+- Click **Next: Variables & derivatives** to move on.
+
+::: {.callout-warning}
+A boundary must be loaded before you can use the Sampling tab. If you navigate there without one, a red banner will remind you.
+:::
+
+---
+
+# Tab 3 — Variables & Derivatives
+
+This tab has **four sub-tabs**: Imagery, Elevation, Other layers, and Variable summary. Work through them in order.
+
+## Sub-tab 3.1 — Imagery
+
+### Purpose
+
+Load a multispectral raster for your AOI. Vegetation indices (NDVI, NDRE, GNDVI, etc.) are computed automatically and become covariates for sampling.
+
+### Imagery source options
+
+Use the **Select Imagery Source** dropdown:
+
+| Option | What it does |
+|---|---|
+| **Sentinel-2 (retrieve)** | Searches Microsoft Planetary Computer STAC for Sentinel-2 L2A scenes inside your AOI and date range |
+| **Planet (retrieve)** | Retrieves Planet imagery (requires a Planet API key) |
+| **Upload raster stack** | Upload your own multiband GeoTIFF |
+| **Upload individual bands** | Upload NIR, Red, Red-Edge, Blue, Green as separate single-band TIFFs |
+| **Upload VI TIFF** | Upload a pre-computed vegetation index raster |
+
+### Using Sentinel-2 (recommended free option)
+
+1. Select **Sentinel-2 (retrieve)**.
+2. Set a **date range** using the From / To date pickers.
+   - Broader windows (e.g., one growing season) increase the chance of cloud-free scenes.
+3. Set the **Maximum Cloud Cover (%)** slider — 10% is a good default.
+4. Optionally, set **Max scenes for median** (default 10) — the composite is built from this many evenly-spaced scenes to reduce noise.
+5. Click **Search** — the sidebar populates with a list of available scenes sorted oldest → newest.
+6. Inspect the **NDRE timeseries chart** (main panel) to see vegetation variability over time.
+7. Select a scene (or keep the auto-selected one) and click **Retrieve** to download and composite it.
+8. A spinner appears while bands are downloaded. When it completes, the false-colour preview renders on the map.
+
+::: {.callout-tip}
+If the timeseries chart shows fewer scenes than expected, widen the date range or increase the cloud cover threshold.
+:::
+
+### Using Planet imagery
+
+1. Select **Planet (retrieve)**.
+2. Enter your **Planet API key** in the field provided.
+3. Set the date range and cloud limit as above.
+4. Click **Retrieve Planet Data**. Click **Stop** to cancel.
+
+### Uploading your own raster
+
+1. Select **Upload raster stack** (all bands in one multiband GeoTIFF).
+2. Click the file picker, select your `.tif`, then click **Assign Bands** to map band numbers to NIR/Red/RedEdge/Blue/Green.
+3. The app computes VIs and displays them on the map.
+
+For individual bands: select **Upload individual bands**, upload each band separately, then click **Stack Individual Bands**.
+
+### What the imagery panel shows
+
+- **Map** — false-colour composite of the AOI.
+- **NDRE timeseries** — mean NDRE per scene (or uploaded VI) over time.
+- **Scene list** — all scenes found by the search with cloud-cover percentages.
+
+---
+
+## Sub-tab 3.2 — Elevation
+
+### Purpose
+
+Load a Digital Elevation Model (DEM) and optionally compute terrain derivatives: slope, aspect, Topographic Wetness Index (TWI), and Topographic Position Index (TPI). These become additional covariates for sampling.
+
+### Step-by-step
+
+1. Navigate to the **Elevation** sub-tab.
+2. Choose a **data source**:
+   - **Retrieve elevation** — downloads a DEM from the `elevatr` package (uses AWS Terrain Tiles, no account needed).
+   - **Upload DEM GeoTIFF** — upload your own `.tif` DEM.
+3. For retrieval: click **Retrieve Elevation Data**. A spinner appears; retrieval typically takes 10–60 seconds depending on AOI size.
+4. Once loaded, the DEM preview renders on the map.
+5. In the **Terrain derivatives** section (appears after loading), check the boxes for the derivatives you want, then click **Compute derivatives**.
+   - All checked derivatives are added as separate covariate layers available to the Sampling tab.
+
+::: {.callout-note}
+TWI and TPI are particularly useful for predicting soil moisture patterns and relative terrain position, which often correlate with crop yield and soil carbon.
+:::
+
+---
+
+## Sub-tab 3.3 — Other layers
+
+### Purpose
+
+Add any additional GeoTIFF predictors that are not imagery or elevation — for example, a soil texture map, a historical yield map, or an EC survey layer.
+
+### Step-by-step
+
+1. Navigate to the **Other layers** sub-tab.
+2. Choose a **data source** from the dropdown.
+3. Click the file picker and upload your `.tif`.
+4. Click **Add Layer**. The layer is added to the covariate pool and appears on the map.
+5. Repeat for as many additional layers as needed.
+6. Click **Clear All** to remove all added layers.
+
+---
+
+## Sub-tab 3.4 — Variable Summary
+
+### Purpose
+
+QA table showing the min / max / mean / median of every loaded covariate **inside the AOI**. Use this to verify that your rasters have sensible value ranges before sampling.
+
+### Step-by-step
+
+1. Navigate to the **Variable summary** sub-tab.
+2. Click **Compute / refresh summary**.
+3. A table appears with one row per loaded layer.
+4. Look for anomalous ranges (e.g., NDVI > 1.0, elevation = 0 over land) — these indicate mismatched projections or no-data issues. Go back to the relevant sub-tab and reload the layer if needed.
+
+---
+
+# Tab 4 — Sampling
+
+This tab has three sub-tabs: **Technique comparison**, **Generate sample points**, and **Population vs sample**.
+
+## Sub-tab 4.1 — Technique comparison *(optional but recommended)*
+
+### Purpose
+
+Statistically benchmark six sampling strategies against your loaded covariates across a range of sample sizes. The output guides you to the most efficient method and the minimum sample count that achieves acceptable covariate coverage.
+
+### Step-by-step
+
+1. Navigate to **Sampling → Technique comparison**.
+2. **Select covariates** — by default all loaded layers are checked. Uncheck layers that are not ecologically meaningful for your objective.
+   - Use the **Covariate preset** dropdown for quick selections:
+     - *Lean default* — fewer correlated VIs (recommended starting point)
+     - *Quick scout* — NDVI + elevation only
+     - *Fertility-focused* — NDVI, NDRE, GNDVI + TWI
+     - *Full variability* — all layers
+   - Click **Apply preset** to update the checkboxes.
+3. **Recommend Zones** — click this button to run a k-means Within-Sum-of-Squares (WSS) elbow analysis. The app suggests an optimal zone count (k) shown on the WSS curve.
+4. Set **Repeats per method per sample size** (default 3; increase to 5–8 for more stable results).
+5. Click **Compare Sampling Techniques**. A progress indicator appears.
+6. When complete, the **benchmark chart** shows covariate coverage score vs. sample size for each method.
+7. Use the **threshold sliders** to define your acceptance criteria:
+   - *Threshold target* — minimum % of the maximum score to consider "good enough".
+   - *Minimum acceptable range coverage* — how well sample points must cover the full covariate range.
+   - *Cost penalty weight* — balance between accuracy and cost (0 = pure accuracy, 1 = pure cost minimisation).
+8. The app highlights the recommended **method + sample size** combination at the bottom.
+
+::: {.callout-tip}
+Run technique comparison before generating points. It prevents guessing — you see exactly which method needs fewest points to represent your field.
+:::
+
+---
+
+## Sub-tab 4.2 — Generate sample points
+
+### Purpose
+
+Generate the final GPS sample point set based on your chosen method and covariate selection.
+
+### Step-by-step
+
+1. Navigate to **Sampling → Generate sample points**.
+2. The covariate selection from Technique comparison carries over automatically (check or edit as needed).
+3. Choose a **sampling method** from the dropdown:
+   - Simple Random
+   - Systematic Spread
+   - Spread + cLHS
+   - cLHS
+   - Zone-based
+   - Hybrid Zonal cLHS
+4. Set **Number of Sample Points** — use the recommended value from Technique comparison if available.
+5. For zone-based methods, the zone count (k) recommended by **Recommend Zones** is used automatically. You can override it.
+6. For grid-based methods, set **Grid size (meters)** (minimum 6 m).
+7. Set a **Negative Buffer** if you want to keep points away from the field edge (e.g., 10 m for headlands).
+8. Set a **Random Seed** for reproducible results.
+9. Click **Generate points** (or the equivalent button for your method).
+10. Points appear on the map. Review their spatial distribution.
+11. Use **Save Auto Point Edits** if you manually moved any points on the map.
+12. Click **Download GeoJSON of sample points** to export the GPS coordinate file.
+
+::: {.callout-note}
+**Reproducibility:** record the Random Seed used. The same seed with the same covariates produces the same point set.
+:::
+
+---
+
+## Sub-tab 4.3 — Population vs sample
+
+### Purpose
+
+Verify that your sample points represent the full covariate range of the AOI (the "population"). Shows density distributions of each covariate for all field cells vs. the sampled cells.
+
+### Step-by-step
+
+1. Navigate to **Population vs sample**.
+2. Violin plots or density curves appear automatically once points are generated.
+3. Check that the sample distribution (coloured) tracks the field distribution (grey) for each covariate. Major gaps indicate under-represented regions of covariate space.
+4. If coverage looks poor, return to **Generate sample points**, increase the sample size or switch to cLHS, and re-generate.
+
+---
+
+# Tab 5 — App vs Prior
+
+### Purpose
+
+Compare your new app-generated sample locations against **historical field GPS points** collected in a previous season or by a prior protocol. Two views are available: a **map overlay** and **dual-violin covariate distributions**.
+
+### Step-by-step
+
+1. Navigate to the **App vs prior** tab.
+2. In the sidebar, click the **historical points file picker** and upload your prior GPS points (same vector formats as boundary).
+3. The **Map** tab updates automatically showing both old (historical, hollow circles) and new (app, filled circles) points.
+4. Switch to the **Distributions** tab and click **Compute distributions**.
+   - Dual-violin plots appear for each loaded covariate layer.
+   - Compare the spread of historical vs. app samples in covariate space.
+5. Use this comparison to justify your new sampling design in reports or publications — e.g., "the new design covers TWI ranges not represented in the prior grid."
+
+::: {.callout-note}
+Historical points must lie **inside the field boundary** and overlap the loaded covariate rasters, otherwise extraction will fail and a warning will appear.
+:::
+
+---
+
+# Tab 6 — Cost
+
+### Purpose
+
+Estimate total sampling cost for your prior design vs. the app-recommended design, and visualise the savings.
+
+### Step-by-step
+
+1. Navigate to the **Cost** tab.
+2. Fill in the sidebar inputs:
+   - **Prior / grid sample count** — how many points you collected in the previous design (e.g., 40).
+   - **App-recommended sample count** — pre-filled from Technique comparison if you used it; edit if needed.
+   - **Cost per sample** — your actual cost per field visit in the chosen currency (lab fees, travel, time).
+   - **Currency** — choose a preset (USD, EUR, GBP, CAD, AUD) or enter a custom label.
+3. The **bar chart** updates automatically showing total cost for each design.
+4. A **percent savings** summary appears below the chart.
+5. These numbers are automatically included in the PDF report (Tab 7).
+
+---
+
+# Tab 7 — Report
+
+### Purpose
+
+Generate and download a one-page **PDF field-plan report** summarising your entire workflow run.
+
+### What the PDF contains
+
+- Summary section (AOI area, selected method, sample count, date)
+- Map of the AOI with sample points
+- Sample density distribution plot
+- Population vs sample violin plots
+- Historical vs app comparison (if prior points were uploaded)
+- Cost comparison bar chart
+- Technique comparison chart (if the comparison was run)
+
+### Step-by-step
+
+1. Navigate to the **Report** tab.
+2. Review the **text preview** in the main panel to confirm the run details are correct.
+3. Click **Download PDF report**.
+4. The PDF saves to your downloads folder.
+
+::: {.callout-tip}
+The PDF export is deliberately capped in plot count to stay under the 1 GB memory limit on the free shinyapps.io tier. For the full coordinate table, export GeoJSON from the **Sampling** tab.
+:::
+
+---
+
+# Tips and Troubleshooting
+
+## App is slow / spinner does not stop
+
+- Large AOIs dramatically increase retrieval and sampling runtime. If your field is > 500 ha, consider splitting into sub-fields.
+- On the free shinyapps.io tier, only one CPU core is available. Complex cLHS with many covariates can take 1–3 minutes.
+- Click the **Stop** button (red) next to any retrieval action to cancel and try with a smaller date range or fewer scenes.
+
+## Boundary does not appear after upload
+
+- Confirm the file is a **polygon** layer (not point or line).
+- Multipolygons are accepted; the first feature is used.
+- KMZ files must be unzipped or uploaded directly — the app handles KMZ internally.
+
+## Sentinel-2 search returns 0 scenes
+
+- Widen the date range (try 6–12 months).
+- Increase the cloud cover threshold (try 30–50%).
+- Confirm your AOI intersects a Sentinel-2 tile footprint (very small or polar AOIs may have sparse coverage).
+
+## cLHS fails or returns fewer points than requested
+
+- Ensure at least one raster layer is loaded and has coverage inside the AOI.
+- Very small AOIs with coarse-resolution rasters may not have enough valid cells. Try a finer DEM or closer Sentinel-2 scene.
+
+## Sampling points land outside the field
+
+- Enable **Negative Buffer** (e.g., 10 m) on the Generate sample points sub-tab to pull points away from the boundary edge.
+
+## Message log
+
+A **message log** is accessible via the ≡ icon at the bottom-right of the app. It records all info messages and errors from the current session. Click **Download log** to save it for debugging.
+
+---
+
+# Exporting Results
+
+| Output | Where to export |
+|---|---|
+| Boundary GeoJSON | **Boundary** tab → Download GeoJSON of Boundary |
+| Sample points GeoJSON | **Sampling → Generate sample points** → Download GeoJSON |
+| PDF field plan | **Report** tab → Download PDF report |
+| Message log | Bottom-right ≡ → Download log |
+
+---
+
+# Running the Workflow as an R Script
+
+If you prefer scripting over the GUI, `sentinel_workflow_functions.qmd` provides the same logic as standalone R functions. Render it to HTML for a browsable function reference:
+
+```bash
+quarto render sentinel_workflow_functions.qmd
+```
+
+Each section mirrors a tab:
+
+- `read_boundary()` — Tab 2 (Boundary)
+- `retrieve_sentinel()` / `compute_vi()` — Tab 3 (Imagery)
+- `retrieve_elevation()` / `compute_terrain()` — Tab 3 (Elevation)
+- `compare_sampling_methods()` — Tab 4.1 (Technique comparison)
+- `generate_sample_points()` — Tab 4.2 (Generate points)
+
+Function signatures are stable and can be moved into `R/*.R` to start an R package.
+
+---
+
+# Citation
+
+If you use GeoSampler in your research please cite:
+
+> Bhattarai, A. (2025). *GeoSampler: A Sentinel-2 Shiny Dashboard for Statistically Defensible Field Sampling*. GitHub. <https://github.com/Leoanish/geosampler>
+
+---
+
+*Guide version: 1.0 · Last updated: 2025*

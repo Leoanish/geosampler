@@ -1,0 +1,38 @@
+# R project files
+.Rhistory
+.RData
+.Rproj.user/
+*.Rproj
+
+# Shiny / rsconnect deployment credentials (keep dcf out of public repo)
+rsconnect/
+
+# Environment / secrets
+.Renviron
+.env
+
+# OS artefacts
+.DS_Store
+Thumbs.db
+
+# Temporary / cache files
+*.tmp
+*.log
+*.cache
+
+# Large raster / spatial data (commit code, not data)
+*.tif
+*.tiff
+*.img
+*.nc
+*.hdf
+*.h5
+
+# Compiled Quarto output (regenerate locally)
+*_files/
+*.html
+user_guide_cache/
+
+# Word / Excel scratch files
+~$*.docx
+~$*.xlsx

@@ -1,0 +1,855 @@
+---
+title: "Sentinel Dashboard Workflow -> Package-Ready Functions"
+format:
+  html:
+    toc: true
+    number-sections: true
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+# Purpose
+
+This document translates the Shiny workflow into a function-first API so an enthusiastic coder can run the same logic from scripts or a future R package.
+
+Design goals:
+
+- one function per workflow action
+- explicit arguments and return values
+- simpler internals than app reactivity
+- clear split between **Upload** and **Retrieve/Create** paths
+
+You can later move each function into `R/*.R` and keep the same signatures.
+
+```{r}
+#| label: setup-libraries
+#| eval: false
+library(sf)
+library(terra)
+library(raster)
+library(rstac)
+library(dplyr)
+library(mapview)
+library(mapedit)
+library(leaflet)
+library(jsonlite)
+```
+
+# 1) Boundary Tab
+
+## 1.1 Upload/Read Boundary
+
+```{r}
+#| label: fn-read-boundary
+#| eval: false
+#' Read a boundary file and enforce a single polygon AOI.
+#'
+#' @param path Path to .geojson/.kml/.kmz/.zip boundary file.
+#' @param target_crs Output CRS for AOI (default EPSG:4326).
+#' @return sf polygon object with one feature.
+read_boundary <- function(path, target_crs = 4326) {
+  ext <- tolower(tools::file_ext(path))
+  tmp_dir <- tempfile("boundary_")
+  dir.create(tmp_dir, showWarnings = FALSE, recursive = TRUE)
+  on.exit(unlink(tmp_dir, recursive = TRUE), add = TRUE)
+
+  if (ext == "zip" || ext == "kmz") {
+    unzip(path, exdir = tmp_dir)
+    candidates <- list.files(
+      tmp_dir,
+      pattern = "\\.(geojson|kml|shp)$",
+      full.names = TRUE,
+      recursive = TRUE
+    )
+    if (!length(candidates)) stop("No supported boundary file found inside archive.")
+    path <- candidates[[1]]
+  }
+
+  aoi <- sf::st_read(path, quiet = TRUE)
+  if (nrow(aoi) < 1) stop("Boundary file is empty.")
+  aoi <- aoi[1, , drop = FALSE]
+  aoi <- sf::st_make_valid(aoi)
+  sf::st_transform(aoi, target_crs)
+}
+
+```
+
+## 1.2 Create Boundary (No Upload Needed)
+
+```{r}
+#| label: fn-create-boundary
+#| eval: false
+#' Create an AOI polygon directly from coordinates.
+#'
+#' @param xmin,ymin,xmax,ymax Bounding box coordinates in longitude/latitude.
+#' @param target_crs Output CRS.
+#' @return sf polygon AOI.
+create_boundary_bbox <- function(xmin, ymin, xmax, ymax, target_crs = 4326) {
+  bb <- sf::st_bbox(c(xmin = xmin, ymin = ymin, xmax = xmax, ymax = ymax), crs = sf::st_crs(4326))
+  aoi <- sf::st_as_sfc(bb)
+  aoi <- sf::st_sf(id = 1, geometry = aoi)
+  sf::st_transform(aoi, target_crs)
+}
+```
+
+## 1.3 Create Boundary Visually (Map + Current Location)
+
+```{r}
+#| label: fn-create-boundary-visual
+#| eval: false
+#' Guess current location from IP (optional convenience helper).
+#'
+#' @return named numeric vector c(lon, lat).
+guess_current_location <- function() {
+  x <- jsonlite::fromJSON("https://ipapi.co/json/")
+  c(lon = as.numeric(x$longitude), lat = as.numeric(x$latitude))
+}
+
+#' Draw AOI polygon interactively on a map.
+#'
+#' @param start_lon,start_lat Initial map center.
+#' @param zoom Initial map zoom level.
+#' @param target_crs Output CRS for AOI.
+#' @return sf polygon AOI drawn by user.
+create_boundary_interactive <- function(start_lon = NULL, start_lat = NULL, zoom = 12, target_crs = 4326) {
+  if (is.null(start_lon) || is.null(start_lat)) {
+    loc <- tryCatch(guess_current_location(), error = function(e) c(lon = -83.3576, lat = 33.9519))
+    start_lon <- loc[["lon"]]
+    start_lat <- loc[["lat"]]
+  }
+
+  m <- leaflet::leaflet() %>%
+    leaflet::addProviderTiles("Esri.WorldImagery") %>%
+    leaflet::setView(lng = start_lon, lat = start_lat, zoom = zoom)
+
+  # User draws a polygon then saves in Viewer pane.
+  drawn <- mapedit::editMap(m)
+  aoi <- drawn$finished
+  if (is.null(aoi) || nrow(aoi) < 1) stop("No polygon drawn. Draw AOI and save from map editor.")
+  aoi <- aoi[1, , drop = FALSE]
+  aoi <- sf::st_make_valid(aoi)
+  sf::st_transform(aoi, target_crs)
+}
+
+
+bbox <- create_boundary_interactive()
+```
+
+## 1.4 Validate Boundary Size
+
+```{r}
+#| label: fn-boundary-area-check
+#| eval: false
+#' Compute AOI area summary for warnings.
+#'
+#' @param aoi sf polygon.
+#' @return list(area_km2, level) where level in c("ok","caution","warning").
+boundary_area_check <- function(aoi) {
+  aoi_m <- sf::st_transform(aoi, 3857)
+  km2 <- as.numeric(sf::st_area(aoi_m)) / 1e6
+  level <- if (km2 > 100) "warning" else if (km2 > 50) "caution" else "ok"
+  list(area_km2 = km2, level = level)
+}
+
+boundary_area_check(bbox)
+```
+
+# 2) Imagery Tab
+
+## 2.1 Retrieve Path: Sentinel (Search)
+
+```{r}
+#| label: fn-search-sentinel
+#| eval: false
+#' Search Sentinel-2 scenes from Planetary Computer STAC.
+#'
+#' @param aoi sf polygon in any CRS.
+#' @param date_start Start date "YYYY-MM-DD".
+#' @param date_end End date "YYYY-MM-DD".
+#' @param cloud_max Max cloud cover percent.
+#' @param limit Max returned items before local filtering.
+#' @return list of STAC features.
+search_sentinel <- function(aoi, date_start, date_end, cloud_max = 10, limit = 20) {
+  aoi_ll <- sf::st_transform(aoi, 4326)
+  bb <- sf::st_bbox(aoi_ll)
+  bbox <- c(bb["xmin"], bb["ymin"], bb["xmax"], bb["ymax"])
+  datetime <- paste0(date_start, "/", date_end)
+
+  s <- rstac::stac("https://planetarycomputer.microsoft.com/api/stac/v1/")
+  items <- s %>%
+    rstac::stac_search(
+      collections = "sentinel-2-l2a",
+      bbox = bbox,
+      datetime = datetime,
+      limit = limit
+    ) %>%
+    rstac::get_request()
+
+  feats <- items$features %||% list()
+  cc <- vapply(feats, function(f) suppressWarnings(as.numeric(f$properties$`eo:cloud_cover`)), numeric(1))
+  keep <- is.na(cc) | cc <= cloud_max
+  feats[keep]
+}
+
+senti <- search_sentinel(bbox, "2025-06-01", "2026-03-15")
+
+senti[[1]]$links
+```
+
+## 2.2 Retrieve Path: Sentinel (Single Scene)
+
+```{r}
+#| label: fn-retrieve-sentinel-single
+#| eval: false
+#' Build a Sentinel stack for one selected scene.
+#'
+#' @param feature One STAC feature from search_sentinel().
+#' @param aoi sf polygon AOI.
+#' @param out_tif Optional output path. If NULL, temp file is used.
+#' @param target_crs Output CRS string (e.g., "EPSG:4326").
+#' @return list(path, rast, names).
+retrieve_sentinel_single <- function(feature, aoi, out_tif = NULL, target_crs = "EPSG:4326") {
+  if (is.null(out_tif)) out_tif <- tempfile(fileext = ".tif")
+
+  signed <- rstac::items_sign(
+    list(type = "FeatureCollection", features = list(feature)),
+    sign_fn = rstac::sign_planetary_computer()
+  )
+  f <- signed$features[[1]]
+
+  get_url <- function(asset_name) paste0("/vsicurl/", f$assets[[asset_name]]$href)
+  b02 <- terra::rast(get_url("B02"))
+  b03 <- terra::rast(get_url("B03"))
+  b04 <- terra::rast(get_url("B04"))
+  b05 <- terra::rast(get_url("B05"))
+  b08 <- terra::rast(get_url("B08"))
+
+  aoi_v <- terra::vect(sf::st_transform(aoi, terra::crs(b02)))
+  clip <- function(r) terra::mask(terra::crop(r, aoi_v), aoi_v)
+
+  blue <- clip(b02); green <- clip(b03); red <- clip(b04); re <- clip(b05); nir <- clip(b08)
+  re <- terra::resample(re, nir, method = "bilinear")
+
+  stack <- terra::c(blue, green, red, re, nir)
+  names(stack) <- c("Blue", "Green", "Red", "RedEdge", "NIR")
+  stack <- terra::project(stack, target_crs)
+
+  terra::writeRaster(stack, out_tif, overwrite = TRUE, datatype = "FLT4S")
+  list(path = out_tif, rast = stack, names = names(stack))
+}
+
+```
+
+## 2.3 Retrieve Path: Sentinel (Median Composite)
+
+```{r}
+#| label: fn-retrieve-sentinel-median
+#| eval: false
+#' Build a median Sentinel stack from multiple scenes.
+#'
+#' @param features STAC feature list from search_sentinel().
+#' @param aoi sf polygon AOI.
+#' @param n_use Number of scenes to include.
+#' @param out_tif Optional output path.
+#' @param target_crs Output CRS.
+#' @return list(path, rast, names).
+retrieve_sentinel_median <- function(features, aoi, n_use = 8, out_tif = NULL, target_crs = "EPSG:4326") {
+  if (length(features) < 2) stop("Need at least 2 scenes for median.")
+  n_use <- max(2L, min(as.integer(n_use), length(features)))
+  sub_feats <- features[seq_len(n_use)]
+
+  stacks <- lapply(sub_feats, function(f) retrieve_sentinel_single(f, aoi, target_crs = target_crs)$rast)
+  ref <- stacks[[1]]
+  if (length(stacks) > 1L) {
+    for (i in 2:length(stacks)) stacks[[i]] <- terra::resample(stacks[[i]], ref, method = "bilinear")
+  }
+
+  med <- vector("list", 5L)
+  for (i in seq_len(5L)) {
+    rs <- terra::rast(lapply(stacks, function(s) s[[i]]))
+    med[[i]] <- terra::app(rs, fun = function(z) stats::median(z, na.rm = TRUE))
+  }
+
+  out <- terra::rast(med)
+  names(out) <- paste0(c("Blue", "Green", "Red", "RedEdge", "NIR"), "_median")
+  if (is.null(out_tif)) out_tif <- tempfile(fileext = ".tif")
+  terra::writeRaster(out, out_tif, overwrite = TRUE, datatype = "FLT4S")
+  list(path = out_tif, rast = out, names = names(out))
+}
+
+retrieve_sentinel_median(senti, bbox)
+```
+
+## 2.4 Retrieve Path: Planet
+
+```{r}
+#| label: fn-retrieve-planet-skeleton
+#| eval: false
+#' Retrieve Planet imagery (skeleton wrapper).
+#'
+#' @param aoi sf AOI polygon.
+#' @param api_key Planet API key.
+#' @param date_start,date_end Date range.
+#' @param cloud_max Max cloud cover.
+#' @return path to processed raster/zip outputs.
+retrieve_planet <- function(aoi, api_key, date_start, date_end, cloud_max = 10) {
+  stop("Implement by reusing your app's Planet query/order/download steps in one pure function.")
+}
+```
+
+## 2.5 Upload Path: Imagery Stack / Individual Bands / Precomputed VI
+
+```{r}
+#| label: fn-upload-ms-stack
+#| eval: false
+#' Read user-uploaded multispectral stack.
+#'
+#' @param tif_path Path to stack TIFF.
+#' @param band_names Optional names vector.
+#' @return raster::brick
+upload_ms_stack <- function(tif_path, band_names = NULL) {
+  r <- raster::brick(tif_path)
+  if (!is.null(band_names)) names(r) <- band_names
+  r
+}
+```
+
+```{r}
+#| label: fn-stack-individual-bands
+#| eval: false
+#' Stack individual band TIFFs into a multispectral brick.
+#'
+#' @param blue,green,red,rededge,nir Paths to TIFF files.
+#' @return raster::brick with standard names.
+stack_individual_bands <- function(blue, green, red, rededge, nir) {
+  b <- raster::raster(blue)
+  g <- raster::raster(green)
+  r <- raster::raster(red)
+  re <- raster::raster(rededge)
+  n <- raster::raster(nir)
+  out <- raster::brick(b, g, r, re, n)
+  names(out) <- c("Blue", "Green", "Red", "RedEdge", "NIR")
+  out
+}
+```
+
+```{r}
+#| label: fn-add-uploaded-vi
+#| eval: false
+#' Add uploaded vegetation index layer to a named list.
+#'
+#' @param vi_list Named list of RasterLayer/SpatRaster objects.
+#' @param vi_name New layer name (e.g., "NDVI").
+#' @param vi_tif Path to TIFF.
+#' @return Updated named list.
+add_uploaded_vi <- function(vi_list, vi_name, vi_tif) {
+  vi_list[[vi_name]] <- raster::raster(vi_tif)
+  vi_list
+}
+```
+
+# 3) Elevation Tab
+
+## 3.1 Retrieve Path: Elevation Download
+
+```{r}
+#| label: fn-download-elevation
+#| eval: false
+#' Download DEM for AOI and project to target CRS.
+#'
+#' @param aoi sf AOI polygon.
+#' @param z Elevation zoom level/resolution proxy.
+#' @param target_crs Output CRS.
+#' @return terra SpatRaster DEM.
+download_elevation <- function(aoi, z = 12, target_crs = "EPSG:4326") {
+  dem <- elevatr::get_elev_raster(sf::st_transform(aoi, 4326), z = z, clip = "locations")
+  dem <- terra::rast(dem)
+  terra::project(dem, target_crs)
+}
+```
+
+## 3.2 Upload Path: DEM and Derivatives
+
+```{r}
+#| label: fn-upload-elevation-layer
+#| eval: false
+#' Read an uploaded elevation/terrain TIFF.
+#'
+#' @param tif_path Path to .tif/.tiff.
+#' @return raster::raster object.
+upload_elevation_layer <- function(tif_path) {
+  raster::raster(tif_path)
+}
+```
+
+# 4) Other Covariates Tab
+
+## 4.1 Upload Path: Arbitrary Raster Layer
+
+```{r}
+#| label: fn-add-other-raster
+#| eval: false
+#' Add an arbitrary uploaded raster as a named layer.
+#'
+#' @param layer_list Existing named list of rasters.
+#' @param name Layer name.
+#' @param tif_path Raster file path.
+#' @return Updated named list.
+add_other_raster <- function(layer_list, name, tif_path) {
+  layer_list[[name]] <- raster::raster(tif_path)
+  layer_list
+}
+```
+
+# 5) Sampling Tab
+
+## 5.1 Manual Sampling
+
+```{r}
+#| label: fn-manual-points
+#| eval: false
+#' Build manual point sf from coordinates.
+#'
+#' @param df Data frame with lon/lat columns.
+#' @param lon_col,lat_col Column names.
+#' @param crs CRS for created points (default EPSG:4326).
+#' @return sf POINT object.
+build_manual_points <- function(df, lon_col = "lon", lat_col = "lat", crs = 4326) {
+  sf::st_as_sf(df, coords = c(lon_col, lat_col), crs = crs, remove = FALSE)
+}
+```
+
+```{r}
+#| label: fn-manual-sampling-visual
+#| eval: false
+#' Draw manual sample points directly on an interactive map.
+#'
+#' @param aoi sf AOI polygon.
+#' @param target_crs CRS for returned points.
+#' @return sf POINT object.
+manual_sampling_interactive <- function(aoi, target_crs = 4326) {
+  aoi_ll <- sf::st_transform(aoi, 4326)
+  m <- mapview::mapview(aoi_ll, alpha.regions = 0.15, lwd = 2)
+  drawn <- mapedit::editMap(m@map)
+  pts <- drawn$finished
+  if (is.null(pts) || nrow(pts) < 1) stop("No points drawn. Add points and save.")
+  pts <- sf::st_cast(pts, "POINT", warn = FALSE)
+  sf::st_transform(pts, target_crs)
+}
+```
+
+## 5.2 Generate Samples (Random / cLHS / Grid)
+
+```{r}
+#| label: fn-generate-samples-skeleton
+#| eval: false
+#' Generate sample points from covariates and AOI.
+#'
+#' @param aoi sf AOI polygon.
+#' @param covariates RasterStack/SpatRaster.
+#' @param method "random", "clhs", or "grid".
+#' @param n_points Number of points (for random/clhs).
+#' @return sf POINT object.
+generate_samples <- function(aoi, covariates, method = c("random", "clhs", "grid"), n_points = 30) {
+  method <- match.arg(method)
+  aoi <- sf::st_transform(aoi, 4326)
+  cov <- terra::rast(covariates)
+  aoi_v <- terra::vect(aoi)
+
+  # Align AOI and covariates once.
+  if (!identical(terra::crs(cov), terra::crs(aoi_v))) {
+    aoi_v <- terra::project(aoi_v, terra::crs(cov))
+  }
+  cov <- terra::crop(cov, aoi_v, snap = "out")
+  cov <- terra::mask(cov, aoi_v)
+
+  if (method == "random") {
+    pts <- terra::spatSample(cov[[1]], size = n_points, method = "random", na.rm = TRUE, as.points = TRUE)
+    return(sf::st_as_sf(pts))
+  }
+
+  if (method == "grid") {
+    bb <- sf::st_bbox(sf::st_as_sf(aoi_v))
+    side <- ceiling(sqrt(max(1, n_points)))
+    xs <- seq(bb["xmin"], bb["xmax"], length.out = side)
+    ys <- seq(bb["ymin"], bb["ymax"], length.out = side)
+    grd <- expand.grid(x = xs, y = ys)
+    pts <- sf::st_as_sf(grd, coords = c("x", "y"), crs = sf::st_crs(sf::st_as_sf(aoi_v)))
+    keep <- sf::st_within(pts, sf::st_as_sf(aoi_v), sparse = FALSE)[, 1]
+    return(pts[keep, , drop = FALSE])
+  }
+
+  # cLHS path
+  if (!requireNamespace("clhs", quietly = TRUE)) {
+    stop("Package 'clhs' is required for method='clhs'. Install with install.packages('clhs').")
+  }
+  vals <- terra::as.data.frame(cov, xy = TRUE, na.rm = TRUE)
+  if (nrow(vals) < n_points) stop("Not enough non-NA covariate cells for requested cLHS sample size.")
+  cl <- clhs::clhs(vals[, setdiff(names(vals), c("x", "y"))], size = n_points, progress = FALSE, simple = FALSE)
+  sel <- vals[cl$index_samples, c("x", "y"), drop = FALSE]
+  sf::st_as_sf(sel, coords = c("x", "y"), crs = sf::st_crs(sf::st_as_sf(aoi_v)))
+}
+```
+
+# 6) Shared Utilities
+
+## 6.1 Compute Vegetation Indices
+
+```{r}
+#| label: fn-calc-vis
+#| eval: false
+#' Compute NDVI, NDRE, and GNDVI from standard band names.
+#'
+#' @param ms Multispectral raster with Blue/Green/Red/RedEdge/NIR.
+#' @return named list of rasters.
+calculate_vis <- function(ms) {
+  r <- ms[["Red"]]
+  n <- ms[["NIR"]]
+  g <- ms[["Green"]]
+  re <- ms[["RedEdge"]]
+  list(
+    NDVI = (n - r) / (n + r),
+    NDRE = (n - re) / (n + re),
+    GNDVI = (n - g) / (n + g)
+  )
+}
+```
+
+## 6.2 Terrain Derivatives
+
+```{r}
+#| label: fn-terrain-derivatives
+#| eval: false
+#' Compute slope/aspect/TPI/TWI from DEM.
+#'
+#' @param dem DEM raster (terra SpatRaster recommended).
+#' @return named list of terrain rasters.
+terrain_derivatives <- function(dem) {
+  d <- terra::rast(dem)
+  slope <- terra::terrain(d, v = "slope", unit = "degrees")
+  aspect <- terra::terrain(d, v = "aspect", unit = "degrees")
+  tpi <- terra::terrain(d, v = "TPI")
+  twi <- terra::terrain(d, v = "TRI") # placeholder; replace with your preferred TWI algorithm.
+  list(Slope = slope, Aspect = aspect, TPI = tpi, TWI = twi)
+}
+```
+
+## 6.3 Build Covariate Stack (Retrieve Path, No Upload)
+
+```{r}
+#| label: fn-build-covariates-retrieve
+#| eval: false
+#' Build a covariate stack from retrieved Sentinel + elevation.
+#'
+#' @param sentinel_rast Sentinel SpatRaster with Blue/Green/Red/RedEdge/NIR names.
+#' @param dem DEM SpatRaster.
+#' @return SpatRaster containing base bands, VIs, and terrain layers.
+build_covariates_retrieve <- function(sentinel_rast, dem) {
+  s <- terra::rast(sentinel_rast)
+  d <- terra::rast(dem)
+  d <- terra::resample(d, s[[1]], method = "bilinear")
+
+  vis <- calculate_vis(s)
+  vis_r <- terra::rast(vis)
+  terr <- terrain_derivatives(d)
+  terr_r <- terra::rast(terr)
+
+  out <- terra::c(s, vis_r, terr_r)
+  names(out) <- make.names(names(out), unique = TRUE)
+  out
+}
+```
+
+## 6.4 Visual Helpers (Shiny-Like Map Feedback)
+
+```{r}
+#| label: fn-plot-aoi-and-samples
+#| eval: false
+#' Plot AOI, optional covariate layer, and sample points.
+#'
+#' @param aoi sf AOI polygon.
+#' @param samples Optional sf POINT object.
+#' @param covariate Optional SpatRaster/RasterLayer for background.
+#' @return mapview object.
+plot_workflow_map <- function(aoi, samples = NULL, covariate = NULL) {
+  aoi_v <- mapview::mapview(aoi, alpha.regions = 0.15, color = "yellow", lwd = 2)
+  cov_v <- if (!is.null(covariate)) mapview::mapview(covariate, layer.name = "Covariate") else NULL
+  smp_v <- if (!is.null(samples)) mapview::mapview(samples, col.regions = "red", cex = 5, layer.name = "Samples") else NULL
+  Reduce(`+`, Filter(Negate(is.null), list(cov_v, aoi_v, smp_v)))
+}
+```
+
+```{r}
+#| label: fn-plot-auto-comparison
+#| eval: false
+#' Visual comparison of random, cLHS, and grid sampling.
+#'
+#' @param aoi sf AOI polygon.
+#' @param random_pts,clhs_pts,grid_pts sf POINT objects.
+#' @return mapview paneled map.
+plot_sampling_comparison <- function(aoi, random_pts, clhs_pts, grid_pts) {
+  p1 <- mapview::mapview(aoi, alpha.regions = 0.1) + mapview::mapview(random_pts, col.regions = "deepskyblue", layer.name = "Random")
+  p2 <- mapview::mapview(aoi, alpha.regions = 0.1) + mapview::mapview(clhs_pts, col.regions = "orange", layer.name = "cLHS")
+  p3 <- mapview::mapview(aoi, alpha.regions = 0.1) + mapview::mapview(grid_pts, col.regions = "magenta", layer.name = "Grid")
+  p1 | p2 | p3
+}
+```
+
+## 6.5 cLHS Similarity Zones (Mahalanobis, Weak-GPS Friendly)
+
+```{r}
+#| label: fn-mahalanobis-distance-raster
+#| eval: false
+#' Compute Mahalanobis distance raster from cLHS sample distribution.
+#'
+#' @param covariates SpatRaster of covariates used for cLHS.
+#' @param clhs_points sf POINT object returned by generate_samples(..., method = "clhs").
+#' @return SpatRaster with Mahalanobis distance per pixel.
+compute_mahalanobis_distance_raster <- function(covariates, clhs_points) {
+  cov <- terra::rast(covariates)
+  pts <- sf::st_as_sf(clhs_points)
+  pts <- sf::st_transform(pts, sf::st_crs(terra::crs(cov)))
+
+  sample_vals <- terra::extract(cov, terra::vect(pts), ID = FALSE)
+  sample_vals <- stats::na.omit(as.data.frame(sample_vals))
+  if (nrow(sample_vals) < 3) stop("Need at least 3 valid cLHS points to estimate covariance.")
+
+  mu <- colMeans(sample_vals)
+  S <- stats::cov(sample_vals)
+  S_inv <- solve(S)
+
+  f <- function(...) {
+    m <- cbind(...)
+    out <- rep(NA_real_, nrow(m))
+    ok <- stats::complete.cases(m)
+    if (any(ok)) {
+      x <- sweep(m[ok, , drop = FALSE], 2, mu, "-")
+      out[ok] <- sqrt(rowSums((x %*% S_inv) * x))
+    }
+    out
+  }
+  terra::app(cov, fun = f)
+}
+```
+
+```{r}
+#| label: fn-threshold-and-hist
+#| eval: false
+#' Choose threshold from distance quantile and visualize histogram.
+#'
+#' @param dist_rast Mahalanobis distance SpatRaster.
+#' @param quantile_cut Quantile for representative zone (default 0.85).
+#' @return Numeric threshold.
+choose_similarity_threshold <- function(dist_rast, quantile_cut = 0.85) {
+  v <- terra::values(dist_rast, na.rm = TRUE)
+  stats::quantile(v, probs = quantile_cut, na.rm = TRUE)[[1]]
+}
+
+#' Plot distance histogram with threshold marker.
+#'
+#' @param dist_rast Mahalanobis distance SpatRaster.
+#' @param threshold Numeric threshold.
+#' @return NULL.
+plot_distance_histogram <- function(dist_rast, threshold) {
+  v <- terra::values(dist_rast, na.rm = TRUE)
+  hist(v, breaks = 60, col = "grey80", border = "white",
+       main = "Mahalanobis Distance to cLHS Feature Space",
+       xlab = "Distance (lower = more similar)")
+  abline(v = threshold, col = "red", lwd = 2, lty = 2)
+}
+```
+
+```{r}
+#| label: fn-similarity-and-weak-gps-zones
+#| eval: false
+#' Create similarity zone and weak-GPS recommendation zone.
+#'
+#' @param covariates Covariate SpatRaster.
+#' @param clhs_points cLHS sample points.
+#' @param quantile_cut Quantile for similarity zone.
+#' @param gps_tolerance_m GPS tolerance buffer in meters.
+#' @return list(distance, threshold, similarity_zone, weak_gps_zone).
+create_similarity_guidance <- function(covariates, clhs_points, quantile_cut = 0.85, gps_tolerance_m = 30) {
+  d <- compute_mahalanobis_distance_raster(covariates, clhs_points)
+  thr <- choose_similarity_threshold(d, quantile_cut = quantile_cut)
+  sim <- d <= thr
+  names(sim) <- "similar_zone"
+
+  zone_poly <- terra::as.polygons(sim, dissolve = TRUE, values = TRUE)
+  zone_poly <- sf::st_as_sf(zone_poly)
+  zone_poly <- zone_poly[zone_poly$similar_zone == 1, , drop = FALSE]
+
+  pts <- sf::st_as_sf(clhs_points)
+  pts_m <- sf::st_transform(pts, 3857)
+  buf <- sf::st_buffer(pts_m, dist = gps_tolerance_m)
+  zone_m <- sf::st_transform(zone_poly, 3857)
+  weak <- suppressWarnings(sf::st_intersection(zone_m, sf::st_union(buf)))
+  weak <- sf::st_transform(weak, sf::st_crs(pts))
+
+  list(distance = d, threshold = thr, similarity_zone = sim, weak_gps_zone = weak)
+}
+
+#' Visualize similarity guidance zones.
+#'
+#' @param aoi AOI polygon.
+#' @param clhs_points cLHS sample points.
+#' @param similarity_zone Similarity zone raster.
+#' @param weak_gps_zone Weak GPS recommendation polygons.
+#' @return mapview object.
+plot_similarity_guidance <- function(aoi, clhs_points, similarity_zone, weak_gps_zone) {
+  mapview::mapview(aoi, alpha.regions = 0.1, color = "white") +
+    mapview::mapview(similarity_zone, layer.name = "Similarity Zone") +
+    mapview::mapview(clhs_points, col.regions = "orange", cex = 6, layer.name = "cLHS Points") +
+    mapview::mapview(weak_gps_zone, alpha.regions = 0.35, color = "cyan", layer.name = "Weak GPS Recommendation")
+}
+```
+
+# 7) End-to-End Workflow Helpers
+
+## 7.1 Retrieve/Create Workflow (No Upload, Full Path to Sampling)
+
+```{r}
+#| label: cmd-create-to-sampling-workflow
+#| eval: false
+# Option A: create AOI visually on map (recommended)
+aoi <- create_boundary_interactive()
+
+# Option B: create AOI from coordinates (no upload)
+# aoi <- create_boundary_bbox(
+#   xmin = -83.40, ymin = 33.90,
+#   xmax = -83.30, ymax = 34.00
+# )
+
+# Option B: upload/read AOI
+# aoi <- read_boundary("path/to/boundary.geojson")
+
+scene_list <- search_sentinel(aoi, date_start = "2024-04-01", date_end = "2024-05-01", cloud_max = 15, limit = 25)
+
+# Retrieve Sentinel (single or median)
+sentinel <- retrieve_sentinel_median(scene_list, aoi, n_use = 8)
+# sentinel <- retrieve_sentinel_single(scene_list[[1]], aoi)
+
+# Retrieve elevation and derive covariates
+dem <- download_elevation(aoi, z = 12)
+covariates <- build_covariates_retrieve(sentinel$rast, dem)
+
+# Generate sampling points
+samples_random <- generate_samples(aoi, covariates, method = "random", n_points = 30)
+samples_clhs <- generate_samples(aoi, covariates, method = "clhs", n_points = 30)
+samples_grid <- generate_samples(aoi, covariates, method = "grid", n_points = 30)
+
+# Visual QA (like Shiny map feedback)
+plot_workflow_map(aoi, samples_clhs, covariates[[1]])
+plot_sampling_comparison(aoi, samples_random, samples_clhs, samples_grid)
+
+# Similarity guidance for weak GPS farmers
+guide <- create_similarity_guidance(covariates, samples_clhs, quantile_cut = 0.85, gps_tolerance_m = 30)
+plot_distance_histogram(guide$distance, guide$threshold)
+plot_similarity_guidance(aoi, samples_clhs, guide$similarity_zone, guide$weak_gps_zone)
+```
+
+## 7.2 Upload Workflow (Boundary -> Upload Bands -> Compute VI)
+
+```{r}
+#| label: cmd-upload-workflow
+#| eval: false
+aoi <- read_boundary("path/to/boundary.geojson")
+ms <- stack_individual_bands(
+  blue = "blue.tif",
+  green = "green.tif",
+  red = "red.tif",
+  rededge = "rededge.tif",
+  nir = "nir.tif"
+)
+vis <- calculate_vis(ms)
+manual_pts <- manual_sampling_interactive(aoi)
+plot_workflow_map(aoi, manual_pts, ms[[1]])
+```
+
+## 7.3 Mixed Workflow (Upload If Available, Otherwise Create/Retrieve)
+
+```{r}
+#| label: cmd-mixed-workflow-helper
+#| eval: false
+#' Run complete workflow to sampling with upload fallback.
+#'
+#' @param aoi Either sf AOI or NULL.
+#' @param boundary_path Optional boundary file path if aoi is NULL.
+#' @param sentinel_tif Optional uploaded Sentinel stack path.
+#' @param date_start,date_end Used when sentinel_tif is NULL.
+#' @param cloud_max,max_results Sentinel search params.
+#' @param n_scenes_for_median Number of scenes in median retrieval mode.
+#' @param sample_method "random", "clhs", or "grid".
+#' @param n_points Number of sample points.
+#' @return list(aoi, covariates, samples).
+run_workflow_to_sampling <- function(
+    aoi = NULL,
+    boundary_path = NULL,
+    sentinel_tif = NULL,
+    date_start = "2024-04-01",
+    date_end = "2024-05-01",
+    cloud_max = 15,
+    max_results = 25,
+    n_scenes_for_median = 8,
+    sample_method = "clhs",
+    n_points = 30
+) {
+  if (is.null(aoi)) {
+    if (!is.null(boundary_path)) {
+      aoi <- read_boundary(boundary_path)
+    } else {
+      stop("Provide either `aoi` or `boundary_path`.")
+    }
+  }
+
+  sentinel_obj <- if (!is.null(sentinel_tif)) {
+    list(rast = terra::rast(sentinel_tif))
+  } else {
+    feats <- search_sentinel(aoi, date_start, date_end, cloud_max = cloud_max, limit = max_results)
+    retrieve_sentinel_median(feats, aoi, n_use = n_scenes_for_median)
+  }
+
+  dem <- download_elevation(aoi, z = 12)
+  covariates <- build_covariates_retrieve(sentinel_obj$rast, dem)
+  samples <- generate_samples(aoi, covariates, method = sample_method, n_points = n_points)
+  list(aoi = aoi, covariates = covariates, samples = samples)
+}
+```
+
+# 8) How to Turn This Into an R Package
+
+```{r}
+#| label: package-scaffold-commands
+#| eval: false
+# install.packages(c("usethis", "roxygen2", "devtools", "pkgdown", "testthat"))
+
+usethis::create_package("sentinelworkflow")
+usethis::use_mit_license()
+usethis::use_roxygen_md()
+usethis::use_testthat()
+usethis::use_package("sf")
+usethis::use_package("terra")
+usethis::use_package("raster")
+usethis::use_package("rstac")
+usethis::use_package("dplyr")
+```
+
+Suggested structure:
+
+- `R/boundary.R` -> `read_boundary()`, `boundary_area_check()`
+- `R/imagery_sentinel.R` -> search/retrieve functions
+- `R/imagery_upload.R` -> upload stack/bands/VI
+- `R/elevation.R` -> download/upload/derivatives
+- `R/sampling.R` -> manual/generate sample APIs
+- `R/similarity_zones.R` -> Mahalanobis distance and weak-GPS guidance zones
+- `R/utils_indices.R` -> VI and helper math
+
+# 9) Notes for Your Next Iteration
+
+- First migrate **Sentinel search + single retrieve** into package functions (highest value, lowest risk).
+- Keep Shiny app as orchestration/UI only.
+- Add tests with one tiny AOI and very small scene count.
+- Keep async/progress UI in app; keep package functions pure and deterministic.
+
