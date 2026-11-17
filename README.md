@@ -6,7 +6,7 @@
 
 *From satellite imagery to export-ready GPS sample points — entirely in your browser.*
 
-[![Live Demo](https://img.shields.io/badge/🚀%20Live%20Demo-shinyapps.io-2ea44f?style=for-the-badge)](https://recuga.shinyapps.io/sentinel2_trial/)
+[![Live Demo](https://img.shields.io/badge/🚀%20Live%20Demo-shinyapps.io-2ea44f?style=for-the-badge)](https://recuga.shinyapps.io/geosampler/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
 [![R](https://img.shields.io/badge/R-%3E%3D4.1-276DC3?style=for-the-badge&logo=r&logoColor=white)](https://cran.r-project.org/)
 [![GitHub](https://img.shields.io/badge/GitHub-Leoanish%2Fgeosampler-181717?style=for-the-badge&logo=github)](https://github.com/Leoanish/geosampler)
