@@ -22,7 +22,7 @@ execute:
 
 GeoSampler is an R Shiny dashboard that guides you from **area definition → satellite imagery → statistically defensible GPS sample points** — all in your browser. This guide walks through every tab and control in the recommended order.
 
-**Live URL:** <https://recuga.shinyapps.io/sentinel2_trial/>
+**Live URL:** <https://recuga.shinyapps.io/geosampler/>
 
 **Recommended reading time:** 20–30 minutes for a first run; use the table of contents to jump to any tab.
 
