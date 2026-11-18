@@ -27,6 +27,8 @@ Instead of guessing where to sample in a field, GeoSampler uses **Sentinel-2 mul
 
 ## 🔁 End-to-End Workflow
 
+> 📸 **New: [illustrated walkthrough](walkthrough/README.md).** One public research-farm field, taken step by step through the live app with a screenshot at every stage.
+
 ```mermaid
 flowchart LR
     A([🗺️ Define\nBoundary]) --> B([🛰️ Load\nImagery])

@@ -1,0 +1,453 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "G01",
+    "design": "1-ha grid (hypothetical prior)"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.29623,
+     33.722644
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "G02",
+    "design": "1-ha grid (hypothetical prior)"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.29515,
+     33.722644
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "G03",
+    "design": "1-ha grid (hypothetical prior)"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.29407,
+     33.722644
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "G04",
+    "design": "1-ha grid (hypothetical prior)"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.29299,
+     33.722644
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "G05",
+    "design": "1-ha grid (hypothetical prior)"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.29191,
+     33.722644
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "G06",
+    "design": "1-ha grid (hypothetical prior)"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.29623,
+     33.723549
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "G07",
+    "design": "1-ha grid (hypothetical prior)"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.29515,
+     33.723549
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "G08",
+    "design": "1-ha grid (hypothetical prior)"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.29407,
+     33.723549
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "G09",
+    "design": "1-ha grid (hypothetical prior)"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.29299,
+     33.723549
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "G10",
+    "design": "1-ha grid (hypothetical prior)"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.29191,
+     33.723549
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "G11",
+    "design": "1-ha grid (hypothetical prior)"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.29623,
+     33.724453
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "G12",
+    "design": "1-ha grid (hypothetical prior)"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.29515,
+     33.724453
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "G13",
+    "design": "1-ha grid (hypothetical prior)"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.29407,
+     33.724453
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "G14",
+    "design": "1-ha grid (hypothetical prior)"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.29299,
+     33.724453
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "G15",
+    "design": "1-ha grid (hypothetical prior)"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.29191,
+     33.724453
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "G16",
+    "design": "1-ha grid (hypothetical prior)"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.29623,
+     33.725357
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "G17",
+    "design": "1-ha grid (hypothetical prior)"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.29515,
+     33.725357
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "G18",
+    "design": "1-ha grid (hypothetical prior)"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.29407,
+     33.725357
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "G19",
+    "design": "1-ha grid (hypothetical prior)"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.29299,
+     33.725357
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "G20",
+    "design": "1-ha grid (hypothetical prior)"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.29191,
+     33.725357
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "G21",
+    "design": "1-ha grid (hypothetical prior)"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.29623,
+     33.726262
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "G22",
+    "design": "1-ha grid (hypothetical prior)"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.29515,
+     33.726262
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "G23",
+    "design": "1-ha grid (hypothetical prior)"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.29407,
+     33.726262
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "G24",
+    "design": "1-ha grid (hypothetical prior)"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.29299,
+     33.726262
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "G25",
+    "design": "1-ha grid (hypothetical prior)"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.29191,
+     33.726262
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "G26",
+    "design": "1-ha grid (hypothetical prior)"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.29515,
+     33.727166
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "G27",
+    "design": "1-ha grid (hypothetical prior)"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.29407,
+     33.727166
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "G28",
+    "design": "1-ha grid (hypothetical prior)"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.29299,
+     33.727166
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "G29",
+    "design": "1-ha grid (hypothetical prior)"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.29191,
+     33.727166
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "G30",
+    "design": "1-ha grid (hypothetical prior)"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.29299,
+     33.72807
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "G31",
+    "design": "1-ha grid (hypothetical prior)"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.29191,
+     33.72807
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "G32",
+    "design": "1-ha grid (hypothetical prior)"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.29191,
+     33.728975
+    ]
+   }
+  }
+ ]
+}
